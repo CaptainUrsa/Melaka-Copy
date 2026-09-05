@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Melaka Experience Bingo - Live Edition</title>
+  
+  <!-- Firebase Compat Libraries -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+  <style>
+    * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    body { background-color: #f5f0eb; margin: 0; padding: 16px; color: #333; }
+    h1 { text-align: center; color: #8b0000; margin-bottom: 5px; font-size: 24px; text-transform: uppercase; }
+    p.subtitle { text-align: center; color: #666; font-size: 14px; margin-top: 0; margin-bottom: 20px; }
+    
+    .bingo-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    .bingo-card {
+      background: white;
+      border: 2px solid #ddd;
+      border-radius: 12px;
+      aspect-ratio: 1;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      cursor: pointer;
+      position: relative;
+      box-shadow: 0 3px 6px rgba(0,0,0,0.1);
+      transition: transform 0.2s, border-color 0.2s;
+      overflow: hidden;
+    }
+
+    .bingo-card.completed { padding: 0; border: 3px solid #2e7d32; }
+    .bingo-card h3 { font-size: 11px; margin: 6px 0 0 0; font-weight: 600; line-height: 1.2; z-index: 2; }
+    .type-tag { font-size: 9px; text-transform: uppercase; background: #eee; padding: 2px 5px; border-radius: 4px; color: #555; z-index: 2; }
+    
+    .photo-thumb-full {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      position: absolute;
+      top: 0; left: 0;
+    }
+
+    /* Modal Styling */
+    .modal-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.7);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      z-index: 1000;
+    }
+
+    .modal {
+      background: white;
+      border-radius: 16px;
+      padding: 20px;
+      max-width: 400px;
+      width: 100%;
+      text-align: center;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+
+    .modal h2 { margin-top: 0; color: #8b0000; }
+    .modal p { color: #555; font-size: 16px; line-height: 1.4; }
+    
+    .btn {
+      display: inline-block;
+      width: 100%;
+      padding: 12px;
+      margin-top: 10px;
+      background: #8b0000;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-weight: bold;
+      cursor: pointer;
+      font-size: 14px;
+      text-decoration: none;
+    }
+    .btn-secondary { background: #555; }
+    .btn-gps { background: #1976d2; margin-bottom: 5px; }
+    .btn-danger { background: #d32f2f; margin-bottom: 10px; }
+    .btn-compile { background: #2e7d32; margin-bottom: 10px; }
+    
+    input[type="file"] { display: none; }
+
+    /* Admin Panel */
+    .admin-trigger { text-align: center; margin-top: 40px; }
+    .admin-trigger button { background: transparent; border: none; color: #aaa; cursor: pointer; text-decoration: underline; }
+    
+    .admin-panel {
+      display: none;
+      margin-top: 20px;
+      padding: 20px;
+      background: #e0e0e0;
+      border-radius: 8px;
+      max-width: 600px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .admin-links { display: flex; flex-direction: column; gap: 15px; margin-top: 15px; }
+    .team-link-box { 
+      background: white; 
+      padding: 15px; 
+      border-radius: 8px; 
+      border: 1px solid #ccc;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    .team-link-box h4 { margin: 0; color: #333; font-size: 18px; }
+    .team-link-box img { width: 150px; height: 150px; border: 4px solid #fff; outline: 1px solid #ddd; }
+    .team-link-box a { font-size: 11px; word-break: break-all; color: #1976d2; text-decoration: none; text-align: center; }
+
+    /* Compiled Gallery Grid inside Modal */
+    .gallery-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin-top: 15px;
+      text-align: left;
+    }
+    .gallery-item {
+      background: #f9f9f9;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 6px;
+      font-size: 11px;
+    }
+    .gallery-item img {
+      width: 100%;
+      aspect-ratio: 1;
+      object-fit: cover;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+
+  <h1 id="team-title">MELAKA BINGO</h1>
+  <p class="subtitle" id="sync-status">Connecting to Live Server...</p>
+
+  <div class="bingo-grid" id="grid"></div>
+
+  <!-- Modal -->
+  <div class="modal-overlay" id="modal">
+    <div class="modal" id="modal-content-box">
+      <span class="type-tag" id="modal-type">Type</span>
+      <h2 id="modal-title">Item Name</h2>
+      <p id="modal-hint">Hint details...</p>
+      
+      <div id="modal-gps-container"></div>
+      
+      <button class="btn" id="photo-btn" onclick="triggerCamera()">📸 Take Photo to Complete</button>
+      <input type="file" id="cameraInput" accept="image/*" capture="environment" onchange="handlePhoto(event)">
+
+      <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+    </div>
+  </div>
+
+  <!-- Admin Login & Panel -->
+  <div class="admin-trigger">
+    <button onclick="promptAdmin()">Admin Access</button>
+  </div>
+  <div class="admin-panel" id="admin-panel">
+    <h3>Admin Actions</h3>
+    
+    <!-- Compile Photos Button -->
+    <button class="btn btn-compile" onclick="compileAllPhotos()">🖼️ View All Team Photos</button>
+    <button class="btn btn-compile" onclick="downloadAllPhotosZip()">📥 Download All Photos as ZIP</button>
+    
+    <button class="btn btn-danger" onclick="resetBoard()">⚠️ Reset Current Board</button>
+    
+    <h4>Generate Team Links & QR Codes</h4>
+    <button class="btn btn-secondary" onclick="generateTeamLinks()">Generate Shuffled Links</button>
+    <div class="admin-links" id="admin-links-container"></div>
+  </div>
+
+  <script>
+    // =========================================================================
+    // ⚠️ PASTE YOUR FIREBASE CONFIG HERE ⚠️
+    // =========================================================================
+    const firebaseConfig = {
+      apiKey: "AIzaSyCMMoK-OyrpH3Byu_fthdK7MivGkgcIKVQ",
+      authDomain: "melaka-bingo.firebaseapp.com",
+      databaseURL: "https://melaka-bingo-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "melaka-bingo",
+      storageBucket: "melaka-bingo.firebasestorage.app",
+      messagingSenderId: "664309737467",
+      appId: "1:664309737467:web:c99c34ba0dd9eff7f64d5e"
+    };
+
+    // Initialize Firebase
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    // UPDATED ITEMS LIST
+    const baseItems = [
+      { id: 1, name: "Team Photo Challenge", type: "Activity", hint: "If you spot the other team, go over and take a photo with them with heart symbols/shape to complete this!"},
+      { id: 2, name: "Melaka 0 Mile", type: "Sight", hint: "Find the zero mile marker denoting the center of the historic city.", lat: 2.1942850082722125, lng: 102.2486949878147 },
+      { id: 3, name: "Nyonya Laksa", type: "Food", hint: "Rich coconut curry noodle soup topped with fresh prawns, fish cakes, and hard-boiled egg.", lat: 2.1970, lng: 102.2450 },
+      { id: 4, name: "Jonker Center Stage", type: "Shop/Sight", hint: "vibrant open plaza and landmark located at the bustling intersection of Jonker Street and Jalan Tokong", lat: 2.19787578153477, lng: 102.24549892631079 },
+      { id: 5, name: "Mamee Jonker House", type: "Food/Shop", hint: "Visit the famous Mamee noodle concept store and cafe.", lat: 2.1960317106424743, lng: 102.24740812962035 },
+      { id: 6, name: "World Heritage Mural", type: "Sight", hint: "Spot the large mural celebrating Melaka's UNESCO World Heritage status.", lat: 2.1955389567936208, lng: 102.25019931666675 },
+      { id: 7, name: "A Famosa", type: "Sight", hint: "Porta de Santiago - among the oldest European architectural remains in all of Asia.", lat: 2.1917, lng: 102.2503 },
+      { id: 8, name: "San Shu Gong", type: "Shop", hint: "House of Authentic Delicacies at the entrance of Jonker Walk - where you grab the local products", lat: 2.1950752096203283, lng: 102.24838921458746 },
+      { id: 9, name: "Chicken Rice Balls", type: "Food", hint: "Hainan chicken served with rice rolled into savory balls. Choose Halal or Non-Halal below!", 
+        locations: [
+          { name: "Halal: Ee Ji Ban", lat: 2.188414370611107, lng: 102.25359281201293 },
+          { name: "Non-Halal: Chung Wah", lat: 2.1949588925974095, lng: 102.24847689827398 }
+        ] 
+      },
+      { id: 10, name: "Baba Nyonya Museum", type: "Sight", hint: "A preserved 19th-century Peranakan shophouse showcasing Straits Chinese heritage.", lat: 2.1953715717202598, lng: 102.24670724368869},
+      { id: 11, name: "Melaka River", type: "Sight", hint: "Walk along this historic river or board a river boat, and take a photo of the Melaka River", lat: 2.194691383180719, lng: 102.24881364154882},
+      { id: 12, name: "Kueh Pie Tee", type: "Food", hint: "Crispy pastry tart shells filled with savory shredded turnip, prawns, and sweet chili sauce. This is Peranakan version of Popiah. Take a photo with it!"},
+      { id: 13, name: "Heritage Gallery Dataran Pahlawan", type: "Shop", hint: "dedicated retail and cultural space within the mall designed to showcase and preserve traditional local products, crafts, and flavors", lat: 2.1911132277228584, lng: 102.25173485488718 },
+      { id: 14, name: "Samudera Museum", type: "Sight", hint: "A full-size replica of the historic Portuguese ship 'Flora de la Mar' standing 34m tall.", lat: 2.1919, lng: 102.2466 },
+      { id: 15, name: "Church of Saint Paul Remains", type: "Sight", hint: "Climb the stairs from A Famosa to visit church ruins overlooking the Melaka Straits.", lat: 2.1925, lng: 102.2494 },
+      { id: 16, name: "Chendol", type: "Food", hint: "Enjoy an authentic Nyonya Cendol dessert and take a picture with it" }
+    ];
+
+    let activeItems = [];
+    let activeItemId = null;
+    let completedItems = {};
+    let teamName = "lobby";
+
+    function initializeApp() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const layout = urlParams.get('layout');
+      const team = urlParams.get('team');
+      
+      if (team) {
+        teamName = team_${team};
+        document.getElementById('team-title').innerText = TEAM ${team} BINGO;
+      } else {
+        document.getElementById('team-title').innerText = LOBBY BINGO;
+      }
+
+      if (layout) {
+        const order = layout.split(',').map(Number);
+        activeItems = order.map(id => baseItems.find(item => item.id === id));
+      } else {
+        activeItems = [...baseItems];
+      }
+
+      const teamRef = db.ref('bingo_progress/' + teamName);
+      teamRef.on('value', (snapshot) => {
+        const data = snapshot.val();
+        completedItems = data ? data : {}; 
+        
+        document.getElementById('sync-status').innerText = "🟢 Live Sync Active";
+        document.getElementById('sync-status').style.color = "#2e7d32";
+        renderGrid();
+      }, (error) => {
+        document.getElementById('sync-status').innerText = "🔴 Database Error";
+        document.getElementById('sync-status').style.color = "red";
+      });
+    }
+
+    function renderGrid() {
+      const grid = document.getElementById('grid');
+      grid.innerHTML = '';
+
+      activeItems.forEach(item => {
+        const isCompleted = !!completedItems[item.id];
+        const card = document.createElement('div');
+        card.className = bingo-card ${isCompleted ? 'completed' : ''};
+        card.onclick = () => openModal(item, isCompleted);
+
+        if (isCompleted) {
+          card.innerHTML = <img src="${completedItems[item.id]}" class="photo-thumb-full"/>;
+        } else {
+          card.innerHTML = <span class="type-tag">${item.type}</span><h3>${item.name}</h3>;
+        }
+        grid.appendChild(card);
+      });
+    }
+
+    function openModal(item, isCompleted) {
+      activeItemId = item.id;
+      
+      // Reset modal HTML structure back to standard card view if it was used for the gallery
+      document.getElementById('modal-content-box').innerHTML = `
+        <span class="type-tag" id="modal-type">${item.type}</span>
+        <h2 id="modal-title">${item.name}</h2>
+        <p id="modal-hint">${isCompleted ? <strong>Completed!</strong><br><br>"${item.type}" ${item.name} : <strong>💡 Hint:</strong> ${item.hint}}</p>
+        <div id="modal-gps-container"></div>
+        <button class="btn" id="photo-btn" onclick="triggerCamera()">${isCompleted ? '📸 Retake Photo' : '📸 Take Photo to Complete'}</button>
+        <input type="file" id="cameraInput" accept="image/*" capture="environment" onchange="handlePhoto(event)">
+        <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+      `;
+
+      const gpsContainer = document.getElementById('modal-gps-container');
+      if (item.locations) {
+        item.locations.forEach(loc => {
+          gpsContainer.innerHTML += <a class="btn btn-gps" href="https://www.google.com/maps/search/?api=1&query=${loc.lat},${loc.lng}" target="_blank">📍 Maps - ${loc.name}</a>;
+        });
+      } else if (item.lat && item.lng) {
+        gpsContainer.innerHTML = <a class="btn btn-gps" href="https://www.google.com/maps/search/?api=1&query=${item.lat},${item.lng}" target="_blank">📍 Open in Google Maps</a>;
+      }
+
+      document.getElementById('modal').style.display = 'flex';
+    }
+
+    function closeModal() { document.getElementById('modal').style.display = 'none'; }
+    function triggerCamera() { document.getElementById('cameraInput').click(); }
+
+    function handlePhoto(event) {
+      const file = event.target.files[0];
+      if (!file || !activeItemId) return;
+
+      document.getElementById('photo-btn').innerText = "⏳ Uploading...";
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const img = new Image();
+        img.onload = function() {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 500;
+          const scaleSize = MAX_WIDTH / img.width;
+          canvas.width = MAX_WIDTH;
+          canvas.height = img.height * scaleSize;
+          
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.6);
+          db.ref('bingo_progress/' + teamName + '/' + activeItemId).set(compressedDataUrl)
+            .then(() => closeModal())
+            .catch(err => alert("Upload failed: " + err.message));
+        }
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function promptAdmin() {
+      const pw = prompt("Enter Admin Password:");
+      if (pw === "Admin123") {
+        document.getElementById('admin-panel').style.display = "block";
+      } else if (pw !== null) {
+        alert("Incorrect password.");
+      }
+    }
+
+    function resetBoard() {
+      const confirmReset = confirm(Are you sure you want to completely clear the board for ${teamName.toUpperCase()}? This will delete all photos and cannot be undone.);
+      if (confirmReset) {
+        db.ref('bingo_progress/' + teamName).remove()
+          .then(() => alert("Board successfully reset!"))
+          .catch(err => alert("Error resetting board: " + err.message));
+      }
+    }
+
+    // COMPILE ALL PHOTOS FUNCTION
+    function compileAllPhotos() {
+      const modalBox = document.getElementById('modal-content-box');
+      modalBox.innerHTML = `
+        <h2>All Team Photos</h2>
+        <p>Fetching photos from all teams...</p>
+        <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+      `;
+      document.getElementById('modal').style.display = 'flex';
+
+      db.ref('bingo_progress').once('value').then((snapshot) => {
+        const allTeamsData = snapshot.val();
+        if (!allTeamsData) {
+          modalBox.innerHTML = `
+            <h2>All Team Photos</h2>
+            <p>No photos have been uploaded by any team yet!</p>
+            <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+          `;
+          return;
+        }
+
+        let galleryHTML = <div class="gallery-grid">;
+        let photoCount = 0;
+
+        for (let tKey in allTeamsData) {
+          const teamSubData = allTeamsData[tKey];
+          const teamDisplayName = tKey.replace('_', ' ').toUpperCase();
+
+          for (let itemId in teamSubData) {
+            const photoUrl = teamSubData[itemId];
+            const matchedItem = baseItems.find(i => i.id == itemId);
+            const itemName = matchedItem ? matchedItem.name : Item #${itemId};
+
+            galleryHTML += `
+              <div class="gallery-item">
+                <strong>${teamDisplayName}</strong><br>
+                <span>${itemName}</span>
+                <img src="${photoUrl}" />
+              </div>
+            `;
+            photoCount++;
+          }
+        }
+
+        galleryHTML += </div>;
+
+        if (photoCount === 0) {
+          modalBox.innerHTML = `
+            <h2>All Team Photos</h2>
+            <p>No photos found across any team boards yet.</p>
+            <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+          `;
+        } else {
+          modalBox.innerHTML = `
+            <h2>All Team Photos (${photoCount})</h2>
+            <div style="max-height: 60vh; overflow-y: auto;">${galleryHTML}</div>
+            <button class="btn btn-secondary" style="margin-top: 15px;" onclick="closeModal()">Close</button>
+          `;
+        }
+      }).catch(err => {
+        modalBox.innerHTML = `
+          <h2>Error</h2>
+          <p>Could not fetch photos: ${err.message}</p>
+          <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+        `;
+      });
+    }
+
+
+    // DOWNLOAD ALL PHOTOS AS A SINGLE ZIP FILE
+    async function downloadAllPhotosZip() {
+      const button = document.querySelector('button[onclick="downloadAllPhotosZip()"]');
+      const originalText = button ? button.innerText : '';
+
+      try {
+        if (button) {
+          button.disabled = true;
+          button.innerText = "⏳ Preparing ZIP...";
+        }
+
+        const snapshot = await db.ref('bingo_progress').once('value');
+        const allTeamsData = snapshot.val();
+
+        if (!allTeamsData) {
+          alert("No photos have been uploaded yet.");
+          return;
+        }
+
+        const zip = new JSZip();
+        let photoCount = 0;
+
+        for (const teamKey in allTeamsData) {
+          const teamData = allTeamsData[teamKey];
+          const teamFolderName = teamKey.replace(/^team_/, 'Team_').replace(/^lobby$/, 'Lobby');
+          const teamFolder = zip.folder(teamFolderName);
+
+          for (const itemId in teamData) {
+            const dataUrl = teamData[itemId];
+
+            if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) {
+              console.warn(`Skipping ${teamKey}/${itemId}: not a valid image data URL.`);
+              continue;
+            }
+
+            const matchedItem = baseItems.find(i => i.id == itemId);
+            const rawName = matchedItem ? matchedItem.name : `Item_${itemId}`;
+            const safeName = rawName
+              .replace(/[\\/:*?"<>|]/g, '')
+              .replace(/\s+/g, '_')
+              .substring(0, 80);
+
+            const match = dataUrl.match(/^data:image\/([a-zA-Z0-9.+-]+);base64,(.+)$/);
+            if (!match) {
+              console.warn(`Skipping ${teamKey}/${itemId}: unsupported image format.`);
+              continue;
+            }
+
+            let extension = match[1].toLowerCase();
+            if (extension === 'jpeg') extension = 'jpg';
+            if (extension === 'svg+xml') extension = 'svg';
+
+            const base64Data = match[2];
+            const paddedId = String(itemId).padStart(2, '0');
+            const fileName = `${paddedId}_${safeName}.${extension}`;
+
+            teamFolder.file(fileName, base64Data, { base64: true });
+            photoCount++;
+          }
+        }
+
+        if (photoCount === 0) {
+          alert("No valid photos were found.");
+          return;
+        }
+
+        if (button) button.innerText = `⏳ Zipping ${photoCount} photos...`;
+
+        const blob = await zip.generateAsync({
+          type: 'blob',
+          compression: 'DEFLATE',
+          compressionOptions: { level: 6 }
+        });
+
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        const dateStamp = new Date().toISOString().slice(0, 10);
+        link.href = url;
+        link.download = `Melaka_Bingo_Photos_${dateStamp}.zip`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+
+        alert(`Downloaded ${photoCount} photos in one ZIP file.`);
+      } catch (err) {
+        console.error(err);
+        alert("ZIP export failed: " + err.message);
+      } finally {
+        if (button) {
+          button.disabled = false;
+          button.innerText = originalText;
+        }
+      }
+    }
+
+    function generateTeamLinks() {
+      const container = document.getElementById('admin-links-container');
+      container.innerHTML = '';
+      const baseUrl = window.location.href.split('?')[0];
+
+      for (let i = 1; i <= 10; i++) {
+        let ids = baseItems.map(item => item.id);
+        for (let j = ids.length - 1; j > 0; j--) {
+          const k = Math.floor(Math.random() * (j + 1));
+          [ids[j], ids[k]] = [ids[k], ids[j]];
+        }
+        const teamUrl = ${baseUrl}?team=${i}&layout=${ids.join(',')};
+        const qrUrl = https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(teamUrl)};
+        
+        container.innerHTML += `
+          <div class="team-link-box">
+            <h4>Team ${i}</h4>
+            <img src="${qrUrl}" alt="QR Code for Team ${i}" />
+            <a href="${teamUrl}" target="_blank">${teamUrl}</a>
+          </div>
+        `;
+      }
+    }
+
+    window.onload = initializeApp;
+  </script>
+</body>
+</html>
